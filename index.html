@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b7a5a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Road Trip Log</title>
+<style>
+:root{--bg:#f4f6f8;--c:#fff;--t:#16202a;--m:#66717d;--a:#0b7a5a;--b:#dde2e8;--w:#c0392b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1418;--c:#1a2128;--t:#e8edf2;--m:#93a0ad;--a:#3ecf9f;--b:#2c3640;--w:#ff7b6b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1418;--c:#1a2128;--t:#e8edf2;--m:#93a0ad;--a:#3ecf9f;--b:#2c3640;--w:#ff7b6b;color-scheme:dark}
+*{box-sizing:border-box}html,body{margin:0}body{background:var(--bg);color:var(--t);font:16px/1.4 system-ui,sans-serif;padding-bottom:70px}
+main{max-width:560px;margin:auto;padding:12px}
+.card{background:var(--c);border:1px solid var(--b);border-radius:14px;padding:12px;margin-bottom:12px}
+h1,h2,h3{margin:0 0 8px}h1{font-size:20px}h2{font-size:17px}h3{font-size:14px;color:var(--m)}
+label{display:block;font-size:13px;color:var(--m);margin:8px 0 2px}
+input,select,textarea,button{font:inherit;width:100%;padding:10px;border-radius:10px;border:1px solid var(--b);background:var(--bg);color:var(--t)}
+button{cursor:pointer;font-weight:600}button.p{background:var(--a);color:#fff;border:0}button.d{color:var(--w)}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:8px}.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.big{font-size:24px;font-weight:700}.m{color:var(--m);font-size:13px}
+.row{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--b)}
+.row:last-child{border:0}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--c);border-top:1px solid var(--b);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav button{border:0;border-radius:0;background:none;padding:14px}nav .on{color:var(--a)}
+#mod{position:fixed;inset:0;background:#0008;display:none;align-items:flex-end;z-index:9}
+#mod>div{background:var(--c);width:100%;max-width:560px;margin:auto;border-radius:16px 16px 0 0;padding:14px;max-height:90vh;overflow:auto}
+.sc{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}td,th{padding:4px 6px;border-bottom:1px solid var(--b);text-align:left;white-space:nowrap}
+svg{width:100%;height:auto}
+#toast{position:fixed;top:calc(env(safe-area-inset-top,0px) + 10px);left:12px;right:12px;max-width:536px;margin:auto;background:var(--w);color:#fff;padding:12px;border-radius:10px;z-index:20;display:none;font-weight:600}
+</style></head><body>
+<main id="app"></main>
+<div id="toast"></div><div id="mod"><div id="mb"></div></div>
+<nav><button id="n1" onclick="tab('trip')">Trip</button><button id="n2" onclick="tab('rep')">Past Trips</button></nav>
+<script>
+var FUELS=["Unleaded 95","Unleaded 93","Premium Unleaded 98","Diesel 50ppm","Diesel 500ppm","Premium Diesel","LRP 93","LRP 95","LPG","Other"];
+var TYPES=["Fuel","Picnic","Rest stop","Destination","Other"];
+var S={trips:[],active:null},view='trip',sel=null,watch=null;
+try{var raw=localStorage.getItem('rtl1');if(raw)S=JSON.parse(raw)}catch(e){}
+function save(){try{localStorage.setItem('rtl1',JSON.stringify(S))}catch(e){}}
+var $=function(s){return document.querySelector(s)};
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function dur(ms){var m=Math.max(0,Math.floor(ms/60000));return Math.floor(m/60)+'h '+String(m%60).padStart(2,'0')+'m'}
+function gapIn(t,a,b){var s=0;(t.pz||[]).forEach(function(z){var x=Math.max(a,z.a),y=Math.min(b,z.b);if(y>x)s+=y-x});return s}
+function tms(t){var e=t.end||Date.now();return e-t.start-gapIn(t,t.start,e)}
+function dt(ts){return new Date(ts).toLocaleString('en-ZA',{dateStyle:'medium',timeStyle:'short'})}
+function f1(x,d){return x==null||isNaN(x)?'–':x.toFixed(d==null?1:d)}
+function R(x){return x?'R'+x.toFixed(2):'–'}
+function hav(a,b){var r=Math.PI/180,x=(b[1]-a[1])*r*Math.cos((a[0]+b[0])*r/2),y=(b[0]-a[0])*r;return Math.sqrt(x*x+y*y)*6371}
+function gpsKm(t){var s=0;for(var i=1;i<t.pts.length;i++)if(!t.pts[i][3])s+=hav(t.pts[i-1],t.pts[i]);return s}
+function cs(t,ci){var c=t.cars[ci],ev=[{ts:t.start,odo:c.o0,n:'Start'}];
+ t.wp.forEach(function(w){if(w.car==ci)ev.push({ts:w.ts,odo:w.odo,n:w.t,w:w})});
+ if(c.o1!=null)ev.push({ts:t.end,odo:c.o1,n:'Home'});
+ var L=0,cost=0;ev.forEach(function(e){if(e.w&&e.w.fuel){L+=e.w.fuel.l;cost+=e.w.fuel.l*e.w.fuel.p}});
+ var km=ev[ev.length-1].odo-c.o0;
+ return{ev:ev,km:km,L:L,cost:cost,c100:km>0&&L>0?L/km*100:null}}
+function fills(t,ci){var s=cs(t,ci),last=s.ev[0],o=[];
+ s.ev.forEach(function(e){if(e.w&&e.w.fuel){var k=e.odo-last.odo;if(k>0)o.push({l:'F'+(o.length+1),v:e.w.fuel.l/k*100,p:e.w.fuel.p});last=e}});return o}
+function say(m){var e=$('#toast');e.textContent=m;e.style.display='block';clearTimeout(say.t);say.t=setTimeout(function(){e.style.display='none'},3500)}
+var CB=null;
+function ask(m,yes,fn){CB=fn;openM('<h2>'+esc(m)+'</h2><div class="g"><button onclick="closeM()">Cancel</button><button class="p" onclick="closeM();CB()">'+yes+'</button></div>')}
+function tab(v){view=v;sel=null;draw()}
+function openM(h){$('#mb').innerHTML=h;$('#mod').style.display='flex'}
+function closeM(){$('#mod').style.display='none'}
+function draw(){$('#n1').className=view=='trip'?'on':'';$('#n2').className=view=='rep'?'on':'';
+ $('#app').innerHTML=view=='trip'?(S.active?live():startForm()):(sel?detail(sel):reports())}
+/* ---- start ---- */
+function pausedCard(){var P=S.paused||[];if(!P.length)return'';var h='<div class="card"><h1>Continue a saved trip</h1>';P.forEach(function(t,i){h+='<div class="row"><div><b>'+esc(t.name)+'</b><div class="m">Saved '+dt(t.pausedAt)+' · '+t.wp.length+' waypoints</div></div><div style="width:120px"><button class="p" onclick="resumeTrip('+i+')">Resume</button><button class="d" style="margin-top:6px" onclick="dropPaused('+i+')">Delete</button></div></div>'});return h+'</div>'}
+function dropPaused(i){ask('Delete this saved trip?','Delete',function(){S.paused.splice(i,1);save();draw()})}
+function pausePrompt(dest){openM('<h2>'+(dest?'Destination reached 🎉':'Save trip for later')+'</h2><p class="m">Save this trip now and continue it when you travel back home? All waypoints, fuel and the route so far are kept, and the time while you stay at the destination is not counted.</p><div class="g"><button onclick="closeM()">Keep trip open</button><button class="p" onclick="pauseTrip()">Save &amp; continue later</button></div>')}
+function pauseTrip(){var t=S.active;t.pausedAt=Date.now();S.paused=S.paused||[];S.paused.unshift(t);S.active=null;stopTrack();save();closeM();view='trip';draw()}
+function resumeTrip(i){var t=S.paused.splice(i,1)[0];t.pz=t.pz||[];t.pz.push({a:t.pausedAt,b:Date.now()});delete t.pausedAt;if(t.dir=='Outbound')t.dir='Outbound and return';t.flag=1;S.active=t;save();track();draw()}
+function carRow(i){return'<div class="g card"><div><label>Car '+(i+1)+' name</label><input class="cn" placeholder="e.g. Fortuner"></div><div><label>Odometer (km)</label><input class="co" type="number" inputmode="decimal"></div></div>'}
+function startForm(){var n=S.trips.length;
+ return pausedCard()+'<div class="card"><h1>Start a trip</h1><label>Trip name</label><input id="tn" placeholder="e.g. Joburg to Durban"><label>Direction</label><select id="td"><option>Outbound</option><option>Return</option></select><h3 style="margin-top:12px">Cars on this trip</h3><div id="cars">'+carRow(0)+'</div><div class="g"><button onclick="addCar()">+ Add car</button><button class="p" onclick="startTrip()">Start trip</button></div><p class="m">Date and time are saved automatically. '+n+' trip'+(n==1?'':'s')+' stored.</p></div>'}
+function addCar(){var d=document.createElement('div');d.innerHTML=carRow(document.querySelectorAll('.cn').length);$('#cars').appendChild(d.firstChild)}
+function startTrip(){var ns=document.querySelectorAll('.cn'),os=document.querySelectorAll('.co'),cars=[];
+ for(var i=0;i<ns.length;i++){var o=parseFloat(os[i].value);if(isNaN(o)){say('Enter the odometer for car '+(i+1));return}cars.push({n:ns[i].value||'Car '+(i+1),o0:o,o1:null})}
+ var name=$('#tn').value.trim();if(!name){say('Enter a trip name');return}
+ var go=function(pts){S.active={id:Date.now(),name:name,dir:$('#td').value,start:Date.now(),end:null,cars:cars,pts:pts||[],wp:[]};save();track();draw()};if(!navigator.geolocation){go();return}navigator.geolocation.getCurrentPosition(function(p){go([[p.coords.latitude,p.coords.longitude,Date.now()]])},function(){ask('Location is off, so the route can’t be tracked or mapped. Allow location for this site in Chrome settings, or start without tracking?','Start without tracking',go)},{enableHighAccuracy:true,timeout:15000})}
+function track(){if(!navigator.geolocation||watch!=null||!S.active)return;
+ watch=navigator.geolocation.watchPosition(function(p){var t=S.active;if(!t)return;var pt=[p.coords.latitude,p.coords.longitude,Date.now()],l=t.pts[t.pts.length-1];
+  if(!l||hav(l,pt)>0.05){if(t.flag){pt[3]=1;t.flag=0}t.pts.push(pt);save()}},function(){},{enableHighAccuracy:true,maximumAge:10000})}
+/* ---- live ---- */
+function live(){var t=S.active,h='<div class="card"><h1>'+esc(t.name)+' <span class="m">'+t.dir+'</span></h1><div class="m">Started '+dt(t.start)+'</div><div class="big" id="clk">'+dur(tms(t))+'</div><div class="m">on the road · GPS distance '+f1(gpsKm(t))+' km · '+(t.pts.length?'📍 tracking ('+t.pts.length+' points)':'⚠️ no GPS fix yet')+'</div></div>';
+ t.cars.forEach(function(c,i){var s=cs(t,i);h+='<div class="card"><h2>'+esc(c.n)+'</h2><div class="g3"><div><div class="big">'+f1(s.km,0)+'</div><div class="m">km</div></div><div><div class="big">'+f1(s.c100)+'</div><div class="m">L/100km</div></div><div><div class="big">'+f1(s.L)+'</div><div class="m">litres · '+R(s.cost)+'</div></div></div></div>'});
+ h+='<div class="card"><h2>Add waypoint</h2><div class="g">';
+ TYPES.forEach(function(x){h+='<button onclick="wpForm(\''+x+'\')">'+x+'</button>'});
+ h+='<button class="p" onclick="homeForm()">🏠 Home</button></div></div><div class="card"><h2>Log <span class="m">(tap to edit)</span></h2>';
+ if(!t.wp.length)h+='<div class="m">No waypoints yet.</div>';
+ t.wp.slice().reverse().forEach(function(w){h+='<div class="row" style="cursor:pointer" onclick="wpForm(\''+w.t+'\','+t.wp.indexOf(w)+')"><div><b>'+w.t+'</b> ✎ · '+esc(t.cars[w.car].n)+(w.fuel?' · '+esc(w.fuel.type)+' '+f1(w.fuel.l,2)+'L @ R'+f1(w.fuel.p,2):'')+(w.note?'<div class="m">'+esc(w.note)+'</div>':'')+'</div><div class="m">'+w.odo+' km<br>'+new Date(w.ts).toLocaleTimeString('en-ZA',{timeStyle:'short'})+'</div></div>'});
+ return h+'</div><button style="margin-bottom:8px" onclick="pausePrompt(0)">⏸ Save trip &amp; continue later</button><button class="d" onclick="ask(\'Discard this trip?\',\'Discard\',function(){stopTrack();S.active=null;save();draw()})">Discard trip</button>'}
+function curOdo(t,i){var o=t.cars[i].o0;t.wp.forEach(function(w){if(w.car==i&&w.odo>o)o=w.odo});return o}
+var ET=null,EI=-1;
+function wpForm(type,ei,tid){ET=tid?S.trips.filter(function(x){return x.id==tid})[0]:S.active;EI=ei==null?-1:ei;var t=ET,ew=EI>=0?t.wp[EI]:null,opts=t.cars.map(function(c,i){return'<option value="'+i+'"'+(ew&&ew.car==i?' selected':'')+'>'+esc(c.n)+'</option>'}).join('');
+ var fuel=type=='Fuel'?'<label>Fuel type</label><select id="ft">'+FUELS.map(function(f){return'<option'+(ew&&ew.fuel&&ew.fuel.type==f?' selected':'')+'>'+f+'</option>'}).join('')+'</select><div class="g"><div><label>Litres</label><input id="fl" type="number" step="0.01" inputmode="decimal" oninput="tot()" value="'+(ew&&ew.fuel?ew.fuel.l:'')+'"></div><div><label>Price per litre (R)</label><input id="fp" type="number" step="0.01" inputmode="decimal" oninput="tot()" value="'+(ew&&ew.fuel?ew.fuel.p:'')+'"></div></div><div class="m" id="ftot"></div>':'';
+ openM('<h2>'+(ew?'Edit ':'')+type+'</h2><label>Car</label><select id="wc" onchange="$(\'#wo\').value=curOdo(ET,this.value)">'+opts+'</select><label>Odometer (km)</label><input id="wo" type="number" inputmode="decimal" value="'+(ew?ew.odo:curOdo(t,0))+'">'+fuel+'<label>Notes</label><textarea id="wn" rows="2">'+esc(ew?ew.note:'')+'</textarea><div class="g" style="margin-top:10px"><button onclick="closeM()">Cancel</button><button class="p" onclick="saveWp(\''+type+'\')">Save</button></div>'+(ew?'<button class="d" style="margin-top:8px" onclick="delWp()">Delete waypoint</button>':''));if(ew&&ew.fuel)tot()}
+function tot(){var l=parseFloat($('#fl').value),p=parseFloat($('#fp').value);$('#ftot').textContent=l&&p?'Total: '+R(l*p):''}
+function saveWp(type){var t=ET,ci=+$('#wc').value,o=parseFloat($('#wo').value);if(isNaN(o)||o<t.cars[ci].o0){say('Check the odometer reading');return}
+ var w=EI>=0?t.wp[EI]:{t:type,ts:Date.now(),lat:null,lng:null};w.car=ci;w.odo=o;w.note=$('#wn').value.trim();
+ if(type=='Fuel'){var l=parseFloat($('#fl').value),p=parseFloat($('#fp').value);if(!(l>0)||!(p>0)){say('Enter litres and price');return}w.fuel={type:$('#ft').value,l:l,p:p}}
+ var q=t.pts[t.pts.length-1];if(q&&EI<0){w.lat=q[0];w.lng=q[1]}
+ var isNew=EI<0;if(isNew)t.wp.push(w);save();closeM();draw();if(isNew&&type=='Destination'&&t==S.active)pausePrompt(1)}
+function delWp(){var t=ET,i=EI;ask('Delete this waypoint?','Delete',function(){t.wp.splice(i,1);save();draw()})}
+function homeForm(){var t=S.active,h='<h2>Arrived home 🏠</h2><p class="m">Enter the final odometer for each car.</p>';
+ t.cars.forEach(function(c,i){h+='<label>'+esc(c.n)+' (km)</label><input class="ho" type="number" inputmode="decimal" value="'+curOdo(t,i)+'">'});
+ openM(h+'<div class="g" style="margin-top:10px"><button onclick="closeM()">Cancel</button><button class="p" onclick="endTrip()">Save trip</button></div>')}
+function endTrip(){var t=S.active,hs=document.querySelectorAll('.ho');
+ for(var i=0;i<t.cars.length;i++){var o=parseFloat(hs[i].value);if(isNaN(o)||o<curOdo(t,i)){say('Check odometer for '+t.cars[i].n);return}t.cars[i].o1=o}
+ t.end=Date.now();S.trips.unshift(t);S.active=null;stopTrack();save();view='rep';sel=t.id;draw();openM('<h2>Trip saved to Past Trips ✅</h2><p class="m">'+esc(t.name)+' · '+dur(tms(t))+'</p><p>Start a new trip?</p><div class="g"><button onclick="closeM()">View trip</button><button class="p" onclick="closeM();tab(\'trip\')">New trip</button></div>')}
+function stopTrack(){if(watch!=null){navigator.geolocation.clearWatch(watch);watch=null}}
+/* ---- charts ---- */
+function bars(d,u,title){if(!d.length)return'';var mx=Math.max.apply(null,d.map(function(x){return x.v}))||1,w=300/d.length,s='<h3>'+title+'</h3><svg viewBox="0 0 320 140" role="img" aria-label="'+title+'">';
+ d.forEach(function(x,i){var h=x.v/mx*90,X=10+i*w;s+='<rect x="'+(X+w*.15)+'" y="'+(110-h)+'" width="'+w*.7+'" height="'+h+'" rx="3" fill="var(--a)"/><text x="'+(X+w/2)+'" y="'+(104-h)+'" font-size="9" text-anchor="middle" fill="var(--t)">'+f1(x.v)+'</text><text x="'+(X+w/2)+'" y="126" font-size="9" text-anchor="middle" fill="var(--m)">'+esc(String(x.l).slice(0,8))+'</text>'});
+ return'<div class="card">'+s+'</svg><div class="m">'+u+'</div></div>'}
+function routeSvg(t){var p=t.pts;if(p.length<2)return'<div class="m">No GPS track recorded. Allow location access next time to see the route.</div>';
+ var la=p.map(function(x){return x[0]}),lo=p.map(function(x){return x[1]}),a=Math.min.apply(null,la),b=Math.max.apply(null,la),c=Math.min.apply(null,lo),d=Math.max.apply(null,lo),k=Math.cos((a+b)/2*Math.PI/180),W=d-c||1e-4,H=b-a||1e-4,sc=Math.min(300/(W*k),200/H);
+ function X(x){return 10+(x-c)*k*sc}function Y(y){return 210-(y-a)*sc}
+ var segs=[[]];p.forEach(function(x){if(x[3])segs.push([]);segs[segs.length-1].push(X(x[1]).toFixed(1)+','+Y(x[0]).toFixed(1))});var pl=segs.map(function(g){return'<polyline points="'+g.join(' ')+'" fill="none" stroke="var(--a)" stroke-width="3" stroke-linejoin="round"/>'}).join('');
+ var s='<svg viewBox="0 0 320 220">'+pl;
+ t.wp.forEach(function(w){if(w.lat!=null)s+='<circle cx="'+X(w.lng)+'" cy="'+Y(w.lat)+'" r="5" fill="var(--w)"><title>'+w.t+'</title></circle>'});
+ return s+'</svg>'}
+function mapsLink(t,driven){var p=t.pts;if(p.length<2)return'';var f=p[0],l=p[p.length-1],ws='',dw=t.wp.filter(function(w){return w.t=='Destination'&&w.lat!=null})[0];if(dw&&driven==2)f=[dw.lat,dw.lng];if(dw&&driven==0)l=[dw.lat,dw.lng];if(driven==1){var n=Math.min(8,p.length-2);for(var i=1;i<=n;i++){var q=p[Math.round(i*(p.length-1)/(n+1))];ws+=(i>1?'|':'')+q[0].toFixed(5)+','+q[1].toFixed(5)}}
+ return'https://www.google.com/maps/dir/?api=1&origin='+f[0]+','+f[1]+'&destination='+l[0]+','+l[1]+(ws?'&waypoints='+encodeURIComponent(ws):'')+'&travelmode=driving'}
+/* ---- reports ---- */
+function reports(){var T=S.trips;if(!T.length)return'<div class="card"><h1>Past Trips</h1><p class="m">No saved trips yet. Finish a trip with the Home button and it appears here.</p></div>';
+ var km=0,L=0,C=0,ms=0,d=[];T.forEach(function(t){ms+=tms(t);t.cars.forEach(function(c,i){var s=cs(t,i);km+=s.km;L+=s.L;C+=s.cost});var a=t.cars.map(function(c,i){return cs(t,i).c100}).filter(function(x){return x});if(a.length)d.unshift({l:t.name,v:a.reduce(function(x,y){return x+y})/a.length})});
+ var h='<div class="card"><h1>Past Trips</h1><div class="g"><div><div class="big">'+T.length+'</div><div class="m">trips</div></div><div><div class="big">'+f1(km,0)+'</div><div class="m">km (all cars)</div></div><div><div class="big">'+f1(L>0&&km>0?L/km*100:null)+'</div><div class="m">avg L/100km</div></div><div><div class="big">'+R(C)+'</div><div class="m">fuel spend · '+(km?R(C/km)+'/km':'')+'</div></div></div><div class="m">Total time on the road: '+dur(ms)+'</div></div>'+bars(d.slice(-8),'Average L/100km per trip','Fuel consumption by trip');
+ h+='<div class="card"><h2>Saved trips</h2>';
+ T.forEach(function(t){h+='<div class="row" onclick="sel='+t.id+';draw()" style="cursor:pointer"><div><b>'+esc(t.name)+'</b> <span class="m">'+t.dir+'</span><div class="m">'+dt(t.start)+'</div></div><div class="m">'+dur(tms(t))+'<br>'+t.cars.length+' car'+(t.cars.length>1?'s':'')+'</div></div>'});
+ return h+'</div><button onclick="copyAll()">Copy all data (backup)</button>'}
+function copyAll(){try{navigator.clipboard.writeText(JSON.stringify(S.trips));say('Copied to clipboard')}catch(e){say('Copy not available')}}
+function detail(id){var t=S.trips.filter(function(x){return x.id==id})[0];if(!t){sel=null;return reports()}
+ var ms=tms(t),h='<button onclick="sel=null;draw()">← Past Trips</button><div class="card" style="margin-top:12px"><h1>'+esc(t.name)+'</h1><div class="m">'+t.dir+' · '+dt(t.start)+' → '+dt(t.end)+'</div><div class="big">'+dur(ms)+'</div><div class="m">GPS distance '+f1(gpsKm(t))+' km</div></div>';
+ t.cars.forEach(function(c,i){var s=cs(t,i),hrs=ms/36e5;
+  h+='<div class="card"><h2>'+esc(c.n)+'</h2><div class="g"><div><div class="big">'+f1(s.km,0)+' km</div><div class="m">'+f1(s.km/hrs,0)+' km/h average</div></div><div><div class="big">'+f1(s.c100)+'</div><div class="m">L/100km</div></div><div><div class="big">'+f1(s.L)+' L</div><div class="m">'+R(s.cost)+'</div></div><div><div class="big">'+(s.km?R(s.cost/s.km):'–')+'</div><div class="m">per km</div></div></div></div>';
+  var fl=fills(t,i);h+=bars(fl,'L/100km between fuel stops (assumes full tank at each fill and at start)','Consumption, '+esc(c.n));
+  h+='<div class="card sc"><h3>Between waypoints, '+esc(c.n)+'</h3><table><tr><th>Leg</th><th>km</th><th>Time</th><th>km/h</th><th>Litres</th></tr>';
+  for(var j=1;j<s.ev.length;j++){var a=s.ev[j-1],b=s.ev[j],k=b.odo-a.odo,m=b.ts-a.ts-gapIn(t,a.ts,b.ts);h+='<tr><td>'+a.n+' → '+b.n+'</td><td>'+f1(k,0)+'</td><td>'+dur(m)+'</td><td>'+f1(k/(m/36e5),0)+'</td><td>'+(b.w&&b.w.fuel?f1(b.w.fuel.l,1):'–')+'</td></tr>'}
+  h+='</table></div>'});
+ h+='<div class="card"><h2>Waypoints <span class="m">(tap to edit)</span></h2>';if(!t.wp.length)h+='<div class="m">None logged.</div>';t.wp.forEach(function(w,i){h+='<div class="row" style="cursor:pointer" onclick="wpForm(\''+w.t+'\','+i+','+t.id+')"><div><b>'+w.t+'</b> ✎ · '+esc(t.cars[w.car].n)+(w.fuel?' · '+esc(w.fuel.type)+' '+f1(w.fuel.l,2)+'L @ R'+f1(w.fuel.p,2):'')+(w.note?'<div class="m">'+esc(w.note)+'</div>':'')+'</div><div class="m">'+w.odo+' km<br>'+dt(w.ts)+'</div></div>'});h+='</div><div class="card"><h2>Route driven</h2>'+routeSvg(t);var ml=mapsLink(t,1),fm=mapsLink(t,0),rm=t.wp.some(function(w){return w.t=='Destination'&&w.lat!=null})?mapsLink(t,2):'';
+ h+=(ml?'<p><a href="'+ml+'" target="_blank" rel="noopener">🗺️ See the route I drove on Google Maps</a></p><p><a href="'+fm+'" target="_blank" rel="noopener">⚡ Compare faster routes to the destination</a></p>'+(rm?'<p><a href="'+rm+'" target="_blank" rel="noopener">⚡ Compare faster routes back home</a></p>':'')+'<p class="m">The comparison links ask Google Maps for the best routes between the same start and end, using current traffic.</p>':'')+'</div>';
+ return h+'<button class="d" onclick="ask(\'Delete this trip?\',\'Delete\',function(){S.trips=S.trips.filter(function(x){return x.id!='+t.id+'});sel=null;save();draw()})">Delete trip</button>'}
+setInterval(function(){var e=$('#clk');if(e&&S.active)e.textContent=dur(tms(S.active))},20000);
+if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}
+if(S.active)track();draw();
+</script></body></html>
